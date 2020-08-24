@@ -9,10 +9,10 @@ export class Protocol extends Emittery.Typed<{
   constructor(private readonly socket: Server) {
     super();
     socket.on('connect', (client: Socket) => {
-      client.on('JOIN_ROOM', (userId: string, roomId: string) => {
+      client.on('JOIN_ROOM', (roomId: string, userId: string) => {
         const room = this.createRoom(roomId);
         const user = room.createPlayer(userId, client);
-        this.emit('connected', { room, user });
+        this.emit('connected', { user, room });
       });
     });
   }
