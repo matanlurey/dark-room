@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import io from 'socket.io';
+import { Protocol } from './lib/protocol';
 
 class Session {
   private server?: http.Server;
@@ -17,13 +18,8 @@ class Session {
     this.socket = io(this.server);
     this.server.listen(this.port);
 
-    this.socket.on('connect', (client) => {
-      console.log('Incoming Connection!');
-      client.on('JOIN_ROOM', (roomId: string, userId: string) => {
-        console.log(`${userId} joined room ${roomId}`);
-        client.join(roomId);
-        client.emit('JOINED_ROOM');
-      });
+    new Protocol(this.socket).on('connected', (event) => {
+      console.log(`${event.user.id} joined ${event.room.id}`);
     });
 
     console.log(`Listening on *:${this.port}`);

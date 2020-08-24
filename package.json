@@ -7,6 +7,7 @@
     "@testing-library/react": "^9.5.0",
     "@testing-library/user-event": "^7.2.1",
     "antd": "^4.6.0",
+    "emittery": "^0.7.1",
     "prando": "^5.1.2",
     "react": "^16.13.1",
     "react-dom": "^16.13.1",
@@ -19,7 +20,7 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "server": "ts-node ./server/index.ts",
-    "server-watch": "nodemon ./server/index.ts --watch server"
+    "server-watch": "tsc-watch --esModuleInterop --outDir ./dist --watch server/index.ts --onSuccess \"node ./dist/index.js\""
   },
   "eslintConfig": {
     "extends": "react-app"
@@ -42,11 +43,11 @@
     "@types/socket.io-client": "^1.4.33",
     "express": "^4.17.1",
     "node-sass": "^4.14.1",
-    "nodemon": "^2.0.4",
     "prettier": "^2.0.5",
     "sass": "^1.26.10",
     "socket.io": "^2.3.0",
     "ts-node": "^9.0.0",
+    "tsc-watch": "^4.2.9",
     "typescript": "^4.0.2"
   }
 }
