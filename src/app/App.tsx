@@ -38,7 +38,7 @@ export class App extends React.Component<{}, AppState> {
         key,
       });
       if (this.state.roomId && this.state.userId) {
-        this.onJoinSession(this.state.roomId, this.state.userId);
+        this.onJoinSession(this.state.userId, this.state.roomId);
       } else {
         this.setState({ showJoinModal: true });
       }
@@ -52,8 +52,8 @@ export class App extends React.Component<{}, AppState> {
     this.setState({ socket });
   }
 
-  private onJoinSession(roomId: string, userId: string): void {
-    this.state.socket!.emit('JOIN_ROOM', roomId, userId);
+  private onJoinSession(userId: string, roomId: string): void {
+    this.state.socket!.emit('JOIN_ROOM', userId, roomId);
     this.setState({
       roomId,
       userId,

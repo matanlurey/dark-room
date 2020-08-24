@@ -1,12 +1,6 @@
 import { Modal, Form, Input, Button } from 'antd';
 import React from 'react';
 
-export default function (props: {
-  handleJoin: (room: string, user: string) => void;
-  userId: string;
-  visible: boolean;
-}) {}
-
 interface JoinProps {
   handleJoin: (roomId: string, userId: string) => void;
   initialUserId: string;
