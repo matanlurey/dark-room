@@ -1,0 +1,7 @@
+{
+  "html.format.endWithNewline": true,
+  "editor.formatOnSave": true,
+  "prettier.ignorePath": ".gitignore",
+  "prettier.configPath": ".prettierrc",
+  "prettier.singleQuote": true
+}
