@@ -3,10 +3,18 @@ export type Action =
   | 'moveForward'
   | 'moveBackward'
   | 'turnLeft'
-  | 'turnRight';
+  | 'turnRight'
+  | 'standUp'
+  | 'crouchDown'
+  | 'reachForward';
+
+export type GameElement = 'door';
 
 export interface GameState {
+  readonly isStanding: boolean;
   readonly roundsRemaining: number;
   readonly selectedAction?: Action;
   readonly timelineEvents?: string[][];
 }
+
+export type Item = 'key';

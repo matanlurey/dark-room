@@ -18,7 +18,7 @@ function App() {
   const [userName, setUserName] = useState<string | undefined>();
   const [gameState, setGameState] = useState<GameState>();
   const [gameSocket] = useState<SocketIOClient.Socket>(() => {
-    const socket = IO('ws://localhost:4000');
+    const socket = IO(`ws://${window.location.hostname}:4000`);
     socket
       .on('connect', () =>
         setConnectionState(userName ? 'in-game' : 'connected'),
@@ -60,6 +60,7 @@ function App() {
                 case 'in-game':
                   return (
                     <Game
+                      isStanding={gameState?.isStanding}
                       onActionSelect={(action) => {
                         gameSocket.emit('SET_ACTION', action);
                         return Promise.resolve(true);

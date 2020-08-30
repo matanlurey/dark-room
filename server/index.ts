@@ -1,4 +1,4 @@
-import { Action } from '../shared/state';
+import { Action, Item, GameElement } from '../shared/state';
 import IO from 'socket.io';
 import Prando from 'prando';
 
@@ -10,6 +10,9 @@ type Injuries = 'nothing' | 'disoriented' | 'tripped';
  */
 class Player {
   private readonly events: string[][] = [];
+
+  readonly items: Item[] = [];
+  isStanding = true;
   direction: Direction = 'north';
 
   constructor(readonly name: string, readonly socket: IO.Socket) {}
@@ -26,7 +29,11 @@ class Player {
     roundsRemaining: number;
     selectedAction?: Action;
   }): void {
-    this.socket.emit('FULL_SYNC', { ...args, timelineEvents: this.events });
+    this.socket.emit('FULL_SYNC', {
+      ...args,
+      timelineEvents: this.events,
+      isStanding: this.isStanding,
+    });
   }
 
   turnLeft(): void {
@@ -65,6 +72,8 @@ class Player {
 }
 
 class Space {
+  readonly elements = new Set<GameElement>();
+  readonly items: Item[] = [];
   player?: Player;
 }
 
@@ -152,6 +161,34 @@ class Room {
     }
   }
 
+  initializeElements(): void {
+    this.insertDoor();
+    this.insertKey();
+  }
+
+  private insertKey(): void {
+    const emptySpace = this.findSpace(
+      ...this.rng.nextArrayItem(this.emptySpaces()),
+    );
+    emptySpace!.items.push('key');
+  }
+
+  private insertDoor(): void {
+    const emptyBorderSpace = this.findSpace(
+      ...this.rng.nextArrayItem(
+        this.emptySpaces().filter((p) => {
+          return (
+            p[0] === 0 ||
+            p[1] === 1 ||
+            p[0] === this.spaces.length - 1 ||
+            p[1] === this.spaces.length - 1
+          );
+        }),
+      ),
+    );
+    emptyBorderSpace!.elements.add('door');
+  }
+
   insertIntoEmptySpace(player: Player): void {
     const emptySpaces = this.emptySpaces();
     const coordinate = this.rng.nextArrayItem(emptySpaces);
@@ -185,7 +222,7 @@ class Session {
   private readonly players = new Map<IO.Socket, Player>();
   private readonly rng = new Prando();
   private spaces!: Room;
-  private roundsRemaining = 10;
+  private roundsRemaining = 8;
 
   private get gameInProgress(): boolean {
     return !!this.spaces;
@@ -199,6 +236,8 @@ class Session {
     }
     if (this.gameInProgress) {
       this.fullSync(player);
+    } else {
+      this.roundsRemaining += 2;
     }
     return player;
   }
@@ -240,7 +279,11 @@ class Session {
   }
 
   startGame(): void {
-    this.spaces = new Room(3, 3, this.rng);
+    let w = 3;
+    let h = 3;
+    w += this.players.size - 1;
+    h += this.players.size - 1;
+    this.spaces = new Room(w, h, this.rng);
     this.placeAllPlayers();
     this.players.forEach((p) => this.fullSync(p));
   }
@@ -272,8 +315,56 @@ class Session {
           player.recordEvents('Action: Move Backward');
           this.moveBackward(player);
           break;
+        case 'standUp':
+          player.recordEvents('Action: Stand Up');
+          player.isStanding = true;
+          break;
+        case 'crouchDown':
+          player.recordEvents('Action: Crouch Down');
+          player.isStanding = false;
+          this.pickUpItems(player);
+          break;
+        case 'reachForward':
+          player.recordEvents('Action: Reach Forward');
+          this.reachForward(player);
+          break;
       }
     });
+  }
+
+  private pickUpItems(player: Player): void {
+    const current = this.spaces.findSpace(...this.spaces.findPlayer(player)!)!;
+    if (current.items.length) {
+      player.recordEvents(`Picked Up: ${current.items.join(', ')}`);
+      player.items.push(...current.items);
+      current.items.length = 0;
+    }
+  }
+
+  private reachForward(player: Player): void {
+    const current = this.spaces.findPlayer(player)!;
+    const newArea = this.spaces.computeSpace(
+      current[0],
+      current[1],
+      player.direction,
+      true,
+    );
+    console.info(`${player.name} ${current} [reach] -> ${newArea}`);
+    const newSpace = this.spaces.findSpace(...newArea);
+    if (!newSpace) {
+      player.recordEvents('Felt a Wall');
+    } else if (newSpace.player) {
+      player.recordEvents('Felt a Player');
+    } else if (newSpace.elements.has('door')) {
+      if (player.items.indexOf('key') !== -1) {
+        // TODO: YOU WIN
+        player.recordEvents('Opened a Door');
+      } else {
+        player.recordEvents('Felt a Door');
+      }
+    } else {
+      player.recordEvents('Felt Nothing');
+    }
   }
 
   private moveForward(player: Player): void {
@@ -285,8 +376,14 @@ class Session {
       true,
     );
     console.info(`${player.name} ${current} -> ${newArea}`);
-    if (!this.spaces.findSpace(...newArea)) {
+    const newSpace = this.spaces.findSpace(...newArea);
+    if (!newSpace) {
       return this.wallCollision(player);
+    } else if (newSpace.player) {
+      this.playerCollision(player, true);
+      this.playerCollision(newSpace.player, false);
+    } else if (newSpace.elements.has('door')) {
+      return this.wallCollision(player, 'Door');
     } else {
       delete this.spaces.findSpace(...current)!.player;
       this.spaces.findSpace(...newArea)!.player = player;
@@ -302,16 +399,24 @@ class Session {
       false,
     );
     console.info(`${player.name} ${current} -> ${newArea}`);
-    if (!this.spaces.findSpace(...newArea)) {
+    const newSpace = this.spaces.findSpace(...newArea);
+    if (!newSpace) {
       // TODO: Make the injury table more severe for backward moves.
       return this.wallCollision(player);
+    } else if (newSpace.player) {
+      // TODO: Make the injury table more severe for backward moves.
+      this.playerCollision(player, true);
+      this.playerCollision(newSpace.player, false);
+    } else if (newSpace.elements.has('door')) {
+      // TODO: Make the injury table more severe for backward moves.
+      return this.wallCollision(player, 'Door');
     } else {
       delete this.spaces.findSpace(...current)!.player;
       this.spaces.findSpace(...newArea)!.player = player;
     }
   }
 
-  private wallCollision(player: Player): void {
+  private wallCollision(player: Player, name = 'Wall'): void {
     const injury = this.rng.nextArrayItem<Injuries>([
       'nothing',
       'nothing',
@@ -320,7 +425,39 @@ class Session {
       'disoriented',
       'tripped',
     ]);
-    player.recordEvents('Collided with a Wall');
+    player.recordEvents(`Collided with a ${name}`);
+    switch (injury) {
+      case 'nothing':
+        break;
+      case 'disoriented':
+        if (this.rng.nextBoolean()) {
+          player.turnLeft();
+        } else {
+          player.turnRight();
+        }
+        player.recordEvents('Disoriented');
+        break;
+      case 'tripped':
+        this.spaces.moveIntoNearbyEmptySpace(player);
+        player.recordEvents('Tripped');
+        break;
+    }
+  }
+
+  private playerCollision(player: Player, initiated: boolean): void {
+    const injury = this.rng.nextArrayItem<Injuries>([
+      'nothing',
+      'nothing',
+      'nothing',
+      'disoriented',
+      'disoriented',
+      'tripped',
+    ]);
+    if (initiated) {
+      player.recordEvents('Collided with a Player');
+    } else {
+      player.recordEvents('A Player Collided with You');
+    }
     switch (injury) {
       case 'nothing':
         break;
