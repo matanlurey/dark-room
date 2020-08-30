@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
-import { Button, Col, Divider, Row, Timeline, Statistic } from 'antd';
-
-export type Action = 'moveForward' | 'moveBackward' | 'turnLeft' | 'turnRight';
+import React from 'react';
+import { Button, Col, Divider, Row, Timeline, Statistic, Empty } from 'antd';
+import { Action } from '../../shared/state';
 
 export function Game(
   props: {
@@ -12,10 +11,15 @@ export function Game(
     timelineEvents?: string[][];
   } = {},
 ) {
-  const [disableActions, setDisableActions] = useState(!props.onActionSelect);
+  function actionsDisabled(): boolean {
+    return (
+      !props.onActionSelect ||
+      !!props.selectedAction ||
+      props.roundsRemaining === 0
+    );
+  }
   const trySelectAction = async (action: Action) => {
-    setDisableActions(true);
-    setDisableActions(await props.onActionSelect!(action));
+    props.onActionSelect!(action);
   };
   return (
     <>
@@ -24,13 +28,15 @@ export function Game(
         <Col span={12} style={{ display: 'flex' }}>
           <Statistic
             title="Time in Round"
-            value={props.remainingSeconds || '?'}
+            value={props.remainingSeconds || 'Untimed (∞)'}
           />
         </Col>
         <Col span={12} style={{ display: 'flex' }}>
           <Statistic
             title="Rounds Remaining"
-            value={props.roundsRemaining || '?'}
+            value={
+              props.roundsRemaining === undefined ? '?' : props.roundsRemaining
+            }
           />
         </Col>
       </Row>
@@ -38,23 +44,21 @@ export function Game(
       <Row gutter={[16, 16]}>
         <Col span={12} style={{ display: 'flex' }}>
           <Button
-            disabled={disableActions}
+            disabled={actionsDisabled()}
             style={{ flex: 1 }}
             onClick={() => trySelectAction('moveForward')}
-            type={
-              props.selectedAction === 'moveForward' ? 'primary' : undefined
-            }
+            type={props.selectedAction === 'moveForward' ? 'dashed' : undefined}
           >
             Move Forward
           </Button>
         </Col>
         <Col span={12} style={{ display: 'flex' }}>
           <Button
-            disabled={disableActions}
+            disabled={actionsDisabled()}
             style={{ flex: 1 }}
             onClick={() => trySelectAction('moveBackward')}
             type={
-              props.selectedAction === 'moveBackward' ? 'primary' : undefined
+              props.selectedAction === 'moveBackward' ? 'dashed' : undefined
             }
           >
             Move Backward
@@ -65,20 +69,20 @@ export function Game(
       <Row gutter={[16, 16]}>
         <Col span={12} style={{ display: 'flex' }}>
           <Button
-            disabled={disableActions}
+            disabled={actionsDisabled()}
             style={{ flex: 1 }}
             onClick={() => trySelectAction('turnLeft')}
-            type={props.selectedAction === 'turnLeft' ? 'primary' : undefined}
+            type={props.selectedAction === 'turnLeft' ? 'dashed' : undefined}
           >
             Turn Left
           </Button>
         </Col>
         <Col span={12} style={{ display: 'flex' }}>
           <Button
-            disabled={disableActions}
+            disabled={actionsDisabled()}
             style={{ flex: 1 }}
             onClick={() => trySelectAction('turnRight')}
-            type={props.selectedAction === 'turnRight' ? 'primary' : undefined}
+            type={props.selectedAction === 'turnRight' ? 'dashed' : undefined}
           >
             Turn Right
           </Button>
@@ -87,17 +91,25 @@ export function Game(
       <Divider>Timeline</Divider>
       <Row>
         <Col span={24}>
-          <Timeline mode="alternate" pending={true}>
-            {(props.timelineEvents || []).map((events, turn) => {
+          {(() => {
+            if (!props.timelineEvents || props.timelineEvents.length === 0) {
+              return <Empty description={<>No events yet!</>} />;
+            } else {
               return (
-                <Timeline.Item label={`Turn ${turn}`}>
-                  {events.map((e) => (
-                    <p>{e}</p>
-                  ))}
-                </Timeline.Item>
+                <Timeline mode="left" pending={true} reverse={true}>
+                  {props.timelineEvents.map((events, turn) => {
+                    return (
+                      <Timeline.Item label={`Turn ${turn + 1}`} key={turn}>
+                        {events.map((e, i) => (
+                          <p key={i}>{e}</p>
+                        ))}
+                      </Timeline.Item>
+                    );
+                  })}
+                </Timeline>
               );
-            })}
-          </Timeline>
+            }
+          })()}
         </Col>
       </Row>
     </>

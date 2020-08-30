@@ -4,22 +4,30 @@ import { hot } from 'react-hot-loader';
 import { Join } from './Join';
 import { Game } from './Game';
 import IO from 'socket.io-client';
+import { GameState } from '../../shared/state';
 
-type GameState = 'disconnected' | 'connected' | 'in-game';
+type ConnectionState = 'disconnected' | 'connected' | 'in-game';
 
 /**
  * Root application component.
  */
 function App() {
-  const [gameState, setGameState] = useState<GameState>('disconnected');
+  const [connectionState, setConnectionState] = useState<ConnectionState>(
+    'disconnected',
+  );
   const [userName, setUserName] = useState<string | undefined>();
+  const [gameState, setGameState] = useState<GameState>();
   const [gameSocket] = useState<SocketIOClient.Socket>(() => {
     const socket = IO('ws://localhost:4000');
     socket
-      .on('connect', () => setGameState(userName ? 'in-game' : 'connected'))
-      .on('JOINED', (userName: string) => {
+      .on('connect', () =>
+        setConnectionState(userName ? 'in-game' : 'connected'),
+      )
+      .on('FULL_SYNC', (state: GameState) => {
+        console.log('FULL_SYNC', state);
+        setGameState(state);
         setUserName(userName);
-        setGameState('in-game');
+        setConnectionState('in-game');
       });
     return socket;
   });
@@ -31,22 +39,36 @@ function App() {
         <div className="site-layout-content">
           <div style={{ margin: '20px 50px' }}>
             {(() => {
-              switch (gameState) {
+              switch (connectionState) {
                 case 'disconnected':
                   return 'Connecting...';
                 case 'connected':
                   return (
                     <Join
                       onJoin={(userName) => {
-                        console.log('JOIN', userName);
                         gameSocket.emit('JOIN', userName);
+                        // TODO: Resolve the promise on join error/rejection.
+                        return new Promise(() => {});
+                      }}
+                      onStart={() => {
+                        gameSocket.emit('START');
                         // TODO: Resolve the promise on join error/rejection.
                         return new Promise(() => {});
                       }}
                     />
                   );
                 case 'in-game':
-                  return <Game />;
+                  return (
+                    <Game
+                      onActionSelect={(action) => {
+                        gameSocket.emit('SET_ACTION', action);
+                        return Promise.resolve(true);
+                      }}
+                      roundsRemaining={gameState?.roundsRemaining}
+                      selectedAction={gameState?.selectedAction}
+                      timelineEvents={gameState?.timelineEvents}
+                    />
+                  );
               }
             })()}
           </div>

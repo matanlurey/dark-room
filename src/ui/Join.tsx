@@ -1,4 +1,4 @@
-import { Form, Input, Button } from 'antd';
+import { Form, Input, Button, Row, Col } from 'antd';
 import React, { useState } from 'react';
 import Prando from 'prando';
 
@@ -27,9 +27,13 @@ function randomName(): string {
   )}-${rng.nextInt(100, 999)}`;
 }
 
-export function Join(props: { onJoin?: (name: string) => Promise<void> }) {
+export function Join(props: {
+  onJoin?: (name: string) => Promise<void>;
+  onStart?: () => Promise<void>;
+}) {
   const [form] = Form.useForm();
   const [disableJoin, setDisableJoin] = useState(!props.onJoin);
+  const [disableStart, setDisableStart] = useState(!props.onStart);
   const onJoinPressed = async (name: string) => {
     setDisableJoin(true);
     await props.onJoin!(name);
@@ -46,9 +50,25 @@ export function Join(props: { onJoin?: (name: string) => Promise<void> }) {
         <Input minLength={3} maxLength={20} />
       </Form.Item>
       <Form.Item>
-        <Button type="primary" htmlType="submit" disabled={disableJoin}>
-          Join
-        </Button>
+        <Row gutter={16}>
+          <Col style={{ minWidth: 100 }}>
+            <Button type="primary" htmlType="submit" disabled={disableJoin}>
+              {disableJoin ? 'Joined' : 'Join'}
+            </Button>
+          </Col>
+          <Col style={{ minWidth: 100 }}>
+            <Button
+              type="primary"
+              disabled={!disableJoin || disableStart}
+              onClick={() => {
+                setDisableStart(true);
+                props.onStart!();
+              }}
+            >
+              {disableStart ? 'Starting' : 'Start'}
+            </Button>
+          </Col>
+        </Row>
       </Form.Item>
     </Form>
   );
