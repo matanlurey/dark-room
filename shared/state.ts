@@ -3,12 +3,7 @@ export type Action =
   | 'moveForward'
   | 'moveBackward'
   | 'turnLeft'
-  | 'turnRight'
-  | 'standUp'
-  | 'crouchDown'
-  | 'reachForward';
-
-export type GameElement = 'door';
+  | 'turnRight';
 
 export interface GameState {
   readonly isStanding: boolean;

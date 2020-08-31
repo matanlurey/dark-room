@@ -23,8 +23,11 @@ function App() {
       .on('connect', () =>
         setConnectionState(userName ? 'in-game' : 'connected'),
       )
-      .on('FULL_SYNC', (state: GameState) => {
-        console.log('FULL_SYNC', state);
+      .on('BOOT', () => {
+        setConnectionState('connected');
+      })
+      .on('SYNC', (state: GameState) => {
+        console.log('SYNC', state);
         setGameState(state);
         setUserName(userName);
         setConnectionState('in-game');
@@ -64,6 +67,9 @@ function App() {
                       onActionSelect={(action) => {
                         gameSocket.emit('SET_ACTION', action);
                         return Promise.resolve(true);
+                      }}
+                      restartGame={() => {
+                        gameSocket.emit('RESTART');
                       }}
                       roundsRemaining={gameState?.roundsRemaining}
                       selectedAction={gameState?.selectedAction}

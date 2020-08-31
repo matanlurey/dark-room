@@ -1,4 +1,4 @@
-import { Action, Item, GameElement } from '../shared/state';
+import { Action, Item } from '../shared/state';
 import IO from 'socket.io';
 import Prando from 'prando';
 
@@ -29,7 +29,7 @@ class Player {
     roundsRemaining: number;
     selectedAction?: Action;
   }): void {
-    this.socket.emit('FULL_SYNC', {
+    this.socket.emit('SYNC', {
       ...args,
       timelineEvents: this.events,
       isStanding: this.isStanding,
@@ -72,7 +72,6 @@ class Player {
 }
 
 class Space {
-  readonly elements = new Set<GameElement>();
   readonly items: Item[] = [];
   player?: Player;
 }
@@ -82,12 +81,17 @@ class Space {
  */
 class Room {
   private readonly spaces: Space[][];
+  private door!: [number, number];
 
   constructor(width: number, height: number, private readonly rng: Prando) {
     const spaces = (this.spaces = new Array(height));
     for (let i = 0; i < spaces.length; i++) {
       spaces[i] = Array.from(Array(width), (_) => new Space());
     }
+  }
+
+  isDoor(x: number, y: number): boolean {
+    return this.door[0] === x && this.door[1] === y;
   }
 
   private emptySpaces(nextTo?: Player): [number, number][] {
@@ -167,26 +171,43 @@ class Room {
   }
 
   private insertKey(): void {
-    const emptySpace = this.findSpace(
-      ...this.rng.nextArrayItem(this.emptySpaces()),
-    );
+    const coordinate = this.rng.nextArrayItem(this.emptySpaces())!;
+    const emptySpace = this.findSpace(...coordinate);
     emptySpace!.items.push('key');
+    console.info('Inserted the key in', coordinate);
   }
 
   private insertDoor(): void {
-    const emptyBorderSpace = this.findSpace(
-      ...this.rng.nextArrayItem(
-        this.emptySpaces().filter((p) => {
-          return (
-            p[0] === 0 ||
-            p[1] === 1 ||
-            p[0] === this.spaces.length - 1 ||
-            p[1] === this.spaces.length - 1
-          );
-        }),
-      ),
+    const size = this.spaces.length - 1;
+    let coordinate = this.rng.nextArrayItem(
+      this.emptySpaces().filter((p) => {
+        if (p[0] === 0) {
+          return p[1] !== 0;
+        } else if (p[1] === 0) {
+          return p[0] !== 0;
+        } else if (p[0] === size) {
+          return p[1] !== size;
+        } else if (p[1] === size) {
+          return p[0] !== size;
+        } else {
+          return false;
+        }
+      }),
     );
-    emptyBorderSpace!.elements.add('door');
+    if (coordinate[0] === 0) {
+      coordinate[0] = -1;
+    }
+    if (coordinate[1] === 0) {
+      coordinate[1] = -1;
+    }
+    if (coordinate[0] === size) {
+      coordinate[0] = size + 1;
+    }
+    if (coordinate[1] === size) {
+      coordinate[1] = size + 1;
+    }
+    this.door = coordinate;
+    console.info('Inserted the door in', coordinate);
   }
 
   insertIntoEmptySpace(player: Player): void {
@@ -223,9 +244,14 @@ class Session {
   private readonly rng = new Prando();
   private spaces!: Room;
   private roundsRemaining = 8;
+  private doorUnlocked = false;
 
   private get gameInProgress(): boolean {
     return !!this.spaces;
+  }
+
+  bootPlayers(): void {
+    this.players.forEach((p) => p.socket.emit('BOOT'));
   }
 
   addPlayerIfNew(socket: IO.Socket, userName: string): Player {
@@ -269,6 +295,14 @@ class Session {
     this.roundsRemaining--;
     if (this.roundsRemaining === 0) {
       this.players.forEach((p) => p.recordEvents('Game Over'));
+    } else {
+      this.players.forEach((p) => this.checkSurroundings(p));
+    }
+    if (this.doorUnlocked) {
+      this.players.forEach((p) =>
+        p.recordEvents('Door was unlocked. You win!'),
+      );
+      this.roundsRemaining = 0;
     }
     this.clearPlayersState();
   }
@@ -285,7 +319,12 @@ class Session {
     h += this.players.size - 1;
     this.spaces = new Room(w, h, this.rng);
     this.placeAllPlayers();
-    this.players.forEach((p) => this.fullSync(p));
+    this.spaces.initializeElements();
+    this.players.forEach((p) => {
+      p.startEvents('You awake in a Dark Room');
+      this.checkSurroundings(p);
+      this.fullSync(p);
+    });
   }
 
   private placeAllPlayers(): void {
@@ -309,24 +348,11 @@ class Session {
           break;
         case 'moveForward':
           player.recordEvents('Action: Move Forward');
-          this.moveForward(player);
+          this.movePlayer(player, true);
           break;
         case 'moveBackward':
           player.recordEvents('Action: Move Backward');
-          this.moveBackward(player);
-          break;
-        case 'standUp':
-          player.recordEvents('Action: Stand Up');
-          player.isStanding = true;
-          break;
-        case 'crouchDown':
-          player.recordEvents('Action: Crouch Down');
-          player.isStanding = false;
-          this.pickUpItems(player);
-          break;
-        case 'reachForward':
-          player.recordEvents('Action: Reach Forward');
-          this.reachForward(player);
+          this.movePlayer(player, false);
           break;
       }
     });
@@ -341,110 +367,97 @@ class Session {
     }
   }
 
-  private reachForward(player: Player): void {
+  private movePlayer(player: Player, forwards: boolean): void {
     const current = this.spaces.findPlayer(player)!;
     const newArea = this.spaces.computeSpace(
       current[0],
       current[1],
       player.direction,
-      true,
+      forwards,
     );
-    console.info(`${player.name} ${current} [reach] -> ${newArea}`);
+    console.info(`${player.name} ${current} -> ${newArea}`);
     const newSpace = this.spaces.findSpace(...newArea);
     if (!newSpace) {
-      player.recordEvents('Felt a Wall');
+      this.doCollision(player, 'Wall');
     } else if (newSpace.player) {
-      player.recordEvents('Felt a Player');
-    } else if (newSpace.elements.has('door')) {
+      this.doCollision(player, 'Player');
+      this.doCollision(newSpace.player, 'Player', false);
+    } else {
+      delete this.spaces.findSpace(...current)!.player;
+      this.spaces.findSpace(...newArea)!.player = player;
+    }
+  }
+
+  private checkSurroundings(player: Player): void {
+    const current = this.spaces.findPlayer(player)!;
+    const cForwards = this.spaces.computeSpace(
+      current[0],
+      current[1],
+      player.direction,
+      true,
+    );
+    player.turnLeft();
+    const cToLeft = this.spaces.computeSpace(
+      current[0],
+      current[1],
+      player.direction,
+      true,
+    );
+    player.turnLeft();
+    player.turnLeft();
+    const cToRight = this.spaces.computeSpace(
+      current[0],
+      current[1],
+      player.direction,
+      true,
+    );
+    player.turnLeft();
+    const forwards = this.spaces.findSpace(...cForwards);
+    const toLeft = this.spaces.findSpace(...cToLeft);
+    const toRight = this.spaces.findSpace(...cToRight);
+    let recordedEvent = false;
+    function recordEvent(event: string): void {
+      recordedEvent = true;
+      player.recordEvents(event);
+    }
+    if (forwards) {
+      if (forwards.player) {
+        player.recordEvents('You feel a player in front of you');
+      }
+    } else if (this.spaces.isDoor(...cForwards)) {
+      recordEvent('You feel a door in front of you');
       if (player.items.indexOf('key') !== -1) {
-        // TODO: YOU WIN
-        player.recordEvents('Opened a Door');
-      } else {
-        player.recordEvents('Felt a Door');
+        recordEvent('You open the door');
+        this.doorUnlocked = true;
       }
     } else {
-      player.recordEvents('Felt Nothing');
+      recordEvent('You feel a wall in front of you');
     }
-  }
-
-  private moveForward(player: Player): void {
-    const current = this.spaces.findPlayer(player)!;
-    const newArea = this.spaces.computeSpace(
-      current[0],
-      current[1],
-      player.direction,
-      true,
-    );
-    console.info(`${player.name} ${current} -> ${newArea}`);
-    const newSpace = this.spaces.findSpace(...newArea);
-    if (!newSpace) {
-      return this.wallCollision(player);
-    } else if (newSpace.player) {
-      this.playerCollision(player, true);
-      this.playerCollision(newSpace.player, false);
-    } else if (newSpace.elements.has('door')) {
-      return this.wallCollision(player, 'Door');
+    if (toLeft) {
+      if (toLeft.player) {
+        player.recordEvents('You feel a player to the left of you');
+      }
+    } else if (this.spaces.isDoor(...cToLeft)) {
+      recordEvent('You feel a door to the left of you');
     } else {
-      delete this.spaces.findSpace(...current)!.player;
-      this.spaces.findSpace(...newArea)!.player = player;
+      recordEvent('You feel a wall to the left of you');
     }
-  }
-
-  private moveBackward(player: Player): void {
-    const current = this.spaces.findPlayer(player)!;
-    const newArea = this.spaces.computeSpace(
-      current[0],
-      current[1],
-      player.direction,
-      false,
-    );
-    console.info(`${player.name} ${current} -> ${newArea}`);
-    const newSpace = this.spaces.findSpace(...newArea);
-    if (!newSpace) {
-      // TODO: Make the injury table more severe for backward moves.
-      return this.wallCollision(player);
-    } else if (newSpace.player) {
-      // TODO: Make the injury table more severe for backward moves.
-      this.playerCollision(player, true);
-      this.playerCollision(newSpace.player, false);
-    } else if (newSpace.elements.has('door')) {
-      // TODO: Make the injury table more severe for backward moves.
-      return this.wallCollision(player, 'Door');
+    if (toRight) {
+      if (toRight.player) {
+        player.recordEvents('You feel a player to the right of you');
+      }
+    } else if (this.spaces.isDoor(...cToRight)) {
+      recordEvent('You feel a door to the right of you');
     } else {
-      delete this.spaces.findSpace(...current)!.player;
-      this.spaces.findSpace(...newArea)!.player = player;
+      recordEvent('You feel a wall to the right of you');
     }
+    if (!recordedEvent) {
+      recordEvent("You don't detect anything around you");
+    }
+    this.pickUpItems(player);
   }
 
-  private wallCollision(player: Player, name = 'Wall'): void {
-    const injury = this.rng.nextArrayItem<Injuries>([
-      'nothing',
-      'nothing',
-      'nothing',
-      'disoriented',
-      'disoriented',
-      'tripped',
-    ]);
-    player.recordEvents(`Collided with a ${name}`);
-    switch (injury) {
-      case 'nothing':
-        break;
-      case 'disoriented':
-        if (this.rng.nextBoolean()) {
-          player.turnLeft();
-        } else {
-          player.turnRight();
-        }
-        player.recordEvents('Disoriented');
-        break;
-      case 'tripped':
-        this.spaces.moveIntoNearbyEmptySpace(player);
-        player.recordEvents('Tripped');
-        break;
-    }
-  }
-
-  private playerCollision(player: Player, initiated: boolean): void {
+  private doCollision(player: Player, name: string, initiated = true): void {
     const injury = this.rng.nextArrayItem<Injuries>([
       'nothing',
       'nothing',
@@ -454,9 +467,9 @@ class Session {
       'tripped',
     ]);
     if (initiated) {
-      player.recordEvents('Collided with a Player');
+      player.recordEvents(`Collided with a ${name}`);
     } else {
-      player.recordEvents('A Player Collided with You');
+      player.recordEvents(`${name} Collided with You`);
     }
     switch (injury) {
       case 'nothing':
@@ -478,7 +491,7 @@ class Session {
 }
 
 // Game instance.
-const session = new Session();
+let session = new Session();
 
 // Service instance.
 const server = IO(4000).on('connection', (socket) => {
@@ -486,6 +499,10 @@ const server = IO(4000).on('connection', (socket) => {
     .on('JOIN', (userName: string) => {
       console.info(`${userName} (re?)-joined.`);
       session.addPlayerIfNew(socket, userName);
+    })
+    .on('RESTART', () => {
+      session.bootPlayers();
+      session = new Session();
     })
     .on('START', () => {
       console.info('Received START command');

@@ -6,6 +6,7 @@ export function Game(
   props: {
     isStanding?: boolean;
     onActionSelect?: (action: Action) => Promise<boolean>;
+    restartGame?: () => void;
     remainingSeconds?: number;
     roundsRemaining?: number;
     selectedAction?: Action;
@@ -27,10 +28,22 @@ export function Game(
       <Divider>Status</Divider>
       <Row gutter={[16, 16]}>
         <Col span={12} style={{ display: 'flex' }}>
-          <Statistic
-            title="Time in Round"
-            value={props.remainingSeconds || 'Untimed (∞)'}
-          />
+          {(() => {
+            if (props.roundsRemaining === 0) {
+              return (
+                <Button danger onClick={props.restartGame}>
+                  Restart
+                </Button>
+              );
+            } else {
+              return (
+                <Statistic
+                  title="Time in Round"
+                  value={props.remainingSeconds || 'Untimed (∞)'}
+                />
+              );
+            }
+          })()}
         </Col>
         <Col span={12} style={{ display: 'flex' }}>
           <Statistic
@@ -86,40 +99,6 @@ export function Game(
             type={props.selectedAction === 'turnRight' ? 'dashed' : undefined}
           >
             Turn Right
-          </Button>
-        </Col>
-      </Row>
-      <br />
-      <Row gutter={[16, 16]}>
-        <Col span={12} style={{ display: 'flex' }}>
-          <Button
-            disabled={actionsDisabled()}
-            style={{ flex: 1 }}
-            onClick={() => trySelectAction('reachForward')}
-            type={
-              props.selectedAction === 'reachForward' ? 'dashed' : undefined
-            }
-          >
-            Reach Forward/Use Item
-          </Button>
-        </Col>
-        <Col span={12} style={{ display: 'flex' }}>
-          <Button
-            disabled={actionsDisabled()}
-            style={{ flex: 1 }}
-            onClick={() =>
-              trySelectAction(
-                props.isStanding === false ? 'standUp' : 'crouchDown',
-              )
-            }
-            type={
-              props.selectedAction === 'standUp' ||
-              props.selectedAction === 'crouchDown'
-                ? 'dashed'
-                : undefined
-            }
-          >
-            {props.isStanding === false ? 'Stand Up' : 'Crouch Down'}
           </Button>
         </Col>
       </Row>
