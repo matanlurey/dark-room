@@ -243,7 +243,7 @@ class Session {
   private readonly players = new Map<IO.Socket, Player>();
   private readonly rng = new Prando();
   private spaces!: Room;
-  private roundsRemaining = 8;
+  private roundsRemaining = 10;
   private doorUnlocked = false;
 
   private get gameInProgress(): boolean {
@@ -294,7 +294,9 @@ class Session {
     this.performActions();
     this.roundsRemaining--;
     if (this.roundsRemaining === 0) {
-      this.players.forEach((p) => p.recordEvents('Game Over'));
+      this.players.forEach((p) =>
+        p.recordEvents('The door permanently locks. Game over!'),
+      );
     } else {
       this.players.forEach((p) => this.checkSurroundings(p));
     }

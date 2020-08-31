@@ -110,7 +110,11 @@ export function Game(
               return <Empty description={<>No events yet!</>} />;
             } else {
               return (
-                <Timeline mode="left" pending={true} reverse={true}>
+                <Timeline
+                  mode="left"
+                  pending={props.roundsRemaining}
+                  reverse={true}
+                >
                   {props.timelineEvents.map((events, turn) => {
                     return (
                       <Timeline.Item label={`Turn ${turn + 1}`} key={turn}>
